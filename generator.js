@@ -522,7 +522,8 @@
     onIconRefChange,
     optimizeOpts,
     enableAi,
-    aiAspect
+    aiAspect,
+    accept
   }) {
     const wrap = document.createElement('label');
     wrap.className = 'dropzone' + (wide ? ' wide' : '');
@@ -538,7 +539,9 @@
 
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = 'image/*';
+    // Keep this a short, clean list. Long mixed MIME+extension lists make
+    // the macOS file dialog grey out files it should allow.
+    input.accept = accept || 'image/*';
 
     const clear = document.createElement('button');
     clear.type = 'button';
@@ -1418,8 +1421,9 @@
       field(
         'Image / GIF',
         makeDropzone({
-          label: 'Drop image or GIF',
-          hint: 'Any size — auto-compressed to fit the email',
+          label: 'Drop a GIF',
+          hint: 'GIF only • any size — auto-compressed to fit the email',
+          accept: 'image/gif',
           wide: true,
           currentValue: state.highlightsImage,
           optimizeOpts: { maxWidth: 1200, jpegQuality: 0.92 },
@@ -2019,6 +2023,22 @@
     return bakeForExport(html);
   }
 
+  // Clipboard flavour of the email.
+  //
+  // Gmail's compose editor mangles a FULL html document (doctype + <head> +
+  // <body>): it renders the body once, then re-inserts the stripped remainder,
+  // producing two copies of the template. Handing it a bare fragment — the
+  // <style> block plus the wrapper table — avoids that entirely. Download
+  // still gets the complete document.
+  async function getClipboardHtml() {
+    const full = await getExportHtml();
+    const styleMatch = full.match(/<style[\s\S]*?<\/style>/i);
+    const bodyMatch = full.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+    if (!bodyMatch) return full;
+    const style = styleMatch ? styleMatch[0] : '';
+    return style + bodyMatch[1].trim();
+  }
+
   // Short plain-text flavour for the clipboard. Must never be the full HTML —
   // pasting into Gmail would otherwise insert the rendered email AND the raw
   // source, which looked like two copies of the template.
@@ -2031,7 +2051,7 @@
     // the user gesture. Any await before the write loses the gesture context
     // and the browser rejects with NotAllowedError. ClipboardItem accepts
     // Promises that resolve to Blobs — the gesture is preserved across them.
-    const htmlPromise = getExportHtml();
+    const htmlPromise = getClipboardHtml();
 
     let copiedRich = false;
     let lastError = null;
@@ -2167,7 +2187,7 @@
 
     // For all three flows we copy the HTML synchronously after the click
     async function copyHtmlForPaste() {
-      const htmlPromise = getExportHtml();
+      const htmlPromise = getClipboardHtml();
       try {
         if (navigator.clipboard && navigator.clipboard.write && window.ClipboardItem) {
           const item = new ClipboardItem({

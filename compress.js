@@ -243,8 +243,11 @@
       }
       emit(prefix);
       if (nextCode < 4096) {
-        dict.set(key, nextCode++);
-        if (nextCode > (1 << codeSize) && codeSize < 12) codeSize++;
+        dict.set(key, nextCode);
+        nextCode++;
+        // Widen the code size once the next code to be assigned no longer
+        // fits in the current width. Off-by-one here corrupts the stream.
+        if (nextCode > (1 << codeSize) - 1 && codeSize < 12) codeSize++;
       } else {
         emit(clearCode);
         resetDict();
@@ -312,6 +315,18 @@
 
     w.byte(0x3b);
     return new Uint8Array(w.bytes);
+  }
+
+  // Confirm a generated data URL actually decodes. The GIF encoder is
+  // hand-rolled, so we never hand back bytes a browser can't read — if the
+  // check fails the caller falls back to the original upload.
+  function verifyDataUrl(dataUrl) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => resolve(img.naturalWidth > 0 && img.naturalHeight > 0);
+      img.onerror = () => resolve(false);
+      img.src = dataUrl;
+    });
   }
 
   // ---------- GIF pipeline ----------
@@ -430,12 +445,16 @@
       const bytes = encodeGif(frames, targetW, targetH, palette, true);
       if (!smallest || bytes.length < smallest.length) smallest = bytes;
       if (bytes.length <= budget) {
-        return await blobToDataURL(new Blob([bytes], { type: 'image/gif' }));
+        const url = await blobToDataURL(new Blob([bytes], { type: 'image/gif' }));
+        if (await verifyDataUrl(url)) return url;
+        // Encoder produced something unreadable — don't ship it.
+        return await blobToDataURL(file);
       }
     }
 
     if (smallest) {
-      return await blobToDataURL(new Blob([smallest], { type: 'image/gif' }));
+      const url = await blobToDataURL(new Blob([smallest], { type: 'image/gif' }));
+      if (await verifyDataUrl(url)) return url;
     }
     return await blobToDataURL(file);
   }
