@@ -114,6 +114,7 @@
       "Experience the new features in action. Click the button below to watch quick walkthrough videos.\nOrangeHRM Citra: A Smarter Look. A Smoother Experience.",
     highlightsImage: '',
     highlightsFrame: true,
+    highlightsFit: 'cover',
     highlightsButtonText: 'Watch the Video',
     highlightsVideoUrl: '',
 
@@ -170,7 +171,12 @@
     try {
       localStorage.setItem(LS_KEY, JSON.stringify(state));
     } catch (e) {
-      /* quota — silently skip; preview still works in memory */
+      // Quota exceeded — almost always a large inline GIF. Keep working from
+      // memory and tell the user their images won't survive a reload.
+      if (!saveState._warned) {
+        saveState._warned = true;
+        try { toast('Images are too large to auto-save — they will be lost on reload'); } catch (_) {}
+      }
     }
   }
 
@@ -181,17 +187,6 @@
   // feature existed, or restored from older localStorage), measure it now
   // so the email renders the logo at the correct width = height × aspect.
   function hydrateLogoAspect() {
-    if (state.highlightsImage && !(state.highlightsAspect > 0)) {
-      const hi = new Image();
-      hi.onload = () => {
-        if (hi.naturalHeight > 0) {
-          state.highlightsAspect = hi.naturalWidth / hi.naturalHeight;
-          scheduleRender();
-        }
-      };
-      hi.onerror = () => {};
-      hi.src = state.highlightsImage;
-    }
     if (!state.logo) return;
     if (state.logoAspect && state.logoAspect > 0) return;
     const img = new Image();
@@ -320,8 +315,16 @@
   //   • Keeps PNG with transparency intact (used for logos / icons).
   // ----------------------------------------------------------------
   async function optimizeImage(file, opts = {}) {
-    // High-quality defaults: 1200px max (retina-sharp at 600px display) and
-    // JPEG 0.92 (visually lossless). Callers can override per use-case.
+    // Every upload is forced under a byte budget so the email can never grow
+    // past Gmail's clip limit — regardless of what the user drops in.
+    if (window.MediaCompressor) {
+      return await window.MediaCompressor.compress(file, {
+        maxWidth: opts.maxWidth || 1200,
+        budgetKb: opts.budgetKb || (file.type === 'image/gif' ? 700 : 400)
+      });
+    }
+
+    // ---- legacy fallback (compressor script missing) ----
     const maxWidth = opts.maxWidth || 1200;
     const jpegQuality = opts.jpegQuality || 0.92;
 
@@ -625,11 +628,19 @@
       onChange(dataUrl);
     }
 
+    function setBusy(msg) {
+      text.innerHTML = '<strong>' + label + '</strong><span class="filename">' + msg + '</span>';
+      wrap.classList.add('is-busy');
+    }
+    function clearBusy() { wrap.classList.remove('is-busy'); }
+
     input.addEventListener('change', async (e) => {
       const f = e.target.files && e.target.files[0];
       if (!f) return;
       const originalKb = Math.round(f.size / 1024);
+      setBusy('Optimising ' + originalKb + ' KB…');
       const url = await optimizeImage(f, optimizeOpts || {});
+      clearBusy();
       const outKb = approxKb(url);
       const sizeNote =
         outKb < originalKb
@@ -650,8 +661,9 @@
           const f = items[i].getAsFile();
           if (!f) continue;
           e.preventDefault();
-          const originalKb = Math.round(f.size / 1024);
+          setBusy('Optimising pasted image…');
           optimizeImage(f, optimizeOpts || {}).then((url) => {
+            clearBusy();
             const outKb = approxKb(url);
             setValue(url, `pasted image — ${outKb} KB`);
             if (typeof onIconRefChange === 'function') onIconRefChange(null);
@@ -675,7 +687,9 @@
           const f = e.dataTransfer.files && e.dataTransfer.files[0];
           if (f) {
             const originalKb = Math.round(f.size / 1024);
+            setBusy('Optimising ' + originalKb + ' KB…');
             optimizeImage(f, optimizeOpts || {}).then((url) => {
+              clearBusy();
               const outKb = approxKb(url);
               const note =
                 outKb < originalKb
@@ -1128,7 +1142,7 @@
         'Hero image',
         makeDropzone({
           label: 'Drop hero image or click to upload',
-          hint: 'Auto-resized to 1200px (2× retina) • JPEG kept at quality 0.92',
+          hint: 'Any size — auto-compressed to fit the email',
           wide: true,
           currentValue: state.heroImage,
           optimizeOpts: { maxWidth: 1200, jpegQuality: 0.92 },
@@ -1405,7 +1419,7 @@
         'Image / GIF',
         makeDropzone({
           label: 'Drop image or GIF',
-          hint: 'GIFs pass through unchanged • PNG/JPEG auto-optimised',
+          hint: 'Any size — auto-compressed to fit the email',
           wide: true,
           currentValue: state.highlightsImage,
           optimizeOpts: { maxWidth: 1200, jpegQuality: 0.92 },
@@ -1413,20 +1427,6 @@
           aiAspect: '16:9',
           onChange: (v) => {
             state.highlightsImage = v;
-            // Measure the natural aspect so the device frame sizes itself to
-            // the GIF exactly (no overflow, no letterboxing).
-            if (v) {
-              const im = new Image();
-              im.onload = () => {
-                if (im.naturalHeight > 0) {
-                  state.highlightsAspect = im.naturalWidth / im.naturalHeight;
-                  scheduleRender();
-                }
-              };
-              im.src = v;
-            } else {
-              state.highlightsAspect = null;
-            }
             scheduleRender();
           }
         })
@@ -1435,7 +1435,7 @@
 
     const frameRow = document.createElement('div');
     frameRow.className = 'toggle-row';
-    frameRow.innerHTML = '<span><strong>Show device frame</strong><div class="field-hint">White-outlined rounded screen around the image/GIF</div></span>';
+    frameRow.innerHTML = '<span><strong>Show device frame</strong><div class="field-hint">Fixed 500×281 white-outlined screen — artwork is fitted into it</div></span>';
     frameRow.appendChild(
       switchToggle(state.highlightsFrame !== false, (v) => {
         state.highlightsFrame = v;
@@ -1443,6 +1443,23 @@
       })
     );
     body.appendChild(frameRow);
+
+    body.appendChild(
+      field(
+        'How the image fills the screen',
+        segmented(
+          [
+            { value: 'cover',   label: 'Cover',   sub: 'fill, crop' },
+            { value: 'contain', label: 'Contain', sub: 'fit, letterbox' }
+          ],
+          state.highlightsFit === 'contain' ? 'contain' : 'cover',
+          (v) => {
+            state.highlightsFit = v;
+            scheduleRender();
+          }
+        )
+      )
+    );
 
     body.appendChild(
       field(

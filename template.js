@@ -456,21 +456,21 @@
   function renderHighlightsSection(d) {
     const framed = d.highlightsFrame !== false;
     const src = esc(d.highlightsImage || BLANK);
-    // Media area inside the frame: 600 container − 40px side padding ×2 = 520;
-    // minus 2px border ×2 and 8px inner padding ×2 → 500px wide.
+    // FIXED screen geometry. The frame never resizes to the artwork — the
+    // artwork is fitted into the screen instead, so the layout is identical
+    // no matter what the user uploads.
+    //   600 container − 40px side padding ×2 = 520 outer
+    //   − 2px border ×2 − 8px inner padding ×2 = 500 × 281 media area (16:9)
     const MEDIA_W = 500;
-    // Height comes from the uploaded image's own aspect ratio (measured in the
-    // generator), so the screen always fits the GIF exactly — no overflow, no
-    // letterboxing — and Outlook gets explicit width+height attributes.
-    const aspect = Number(d.highlightsAspect) > 0 ? Number(d.highlightsAspect) : 16 / 9;
-    const MEDIA_H = Math.round(MEDIA_W / aspect);
+    const MEDIA_H = 281;
+    const fit = d.highlightsFit === 'contain' ? 'contain' : 'cover';
 
     const media = framed
       ? `
   <tr><td align="center" class="ohrm-pad" style="padding:4px 40px 8px;background-color:#050a1f;">
     <table cellpadding="0" cellspacing="0" border="0" align="center" width="520" style="width:520px;max-width:520px;border-collapse:separate;border:2px solid #ffffff;border-radius:20px;background-color:#0b1326;">
-      <tr><td align="center" height="${MEDIA_H}" style="padding:8px;line-height:0;font-size:0;height:${MEDIA_H}px;border-radius:20px;overflow:hidden;">
-        <img src="${src}" width="${MEDIA_W}" height="${MEDIA_H}" alt="" class="ohrm-fluid" style="display:block;width:${MEDIA_W}px;max-width:100%;height:${MEDIA_H}px;max-height:${MEDIA_H}px;object-fit:contain;border:0;outline:none;text-decoration:none;border-radius:13px;-ms-interpolation-mode:bicubic;">
+      <tr><td align="center" width="504" height="${MEDIA_H + 16}" style="width:504px;height:${MEDIA_H + 16}px;padding:8px;line-height:0;font-size:0;border-radius:20px;">
+        <img src="${src}" width="${MEDIA_W}" height="${MEDIA_H}" alt="" style="display:block;width:${MEDIA_W}px;height:${MEDIA_H}px;object-fit:${fit};object-position:center;border:0;outline:none;text-decoration:none;border-radius:13px;background-color:#0b1326;-ms-interpolation-mode:bicubic;">
       </td></tr>
     </table>
   </td></tr>`

@@ -646,6 +646,16 @@ body {
 }
 .dropzone.has-image { background: white; border-style: solid; border-color: var(--border-default); }
 .dropzone.dragging { border-color: var(--oxd-primary-one); background: #fff8f2; }
+.dropzone.is-busy {
+  border-color: var(--oxd-primary-one);
+  border-style: solid;
+  background:
+    repeating-linear-gradient(-45deg, #fff8f2 0 12px, #fffdfa 12px 24px);
+  animation: dz-busy 0.9s linear infinite;
+  pointer-events: none;
+}
+.dropzone.is-busy .dropzone-text .filename { color: var(--oxd-primary-one); font-weight: 700; }
+@keyframes dz-busy { to { background-position: 34px 0; } }
 .dropzone-thumb {
   width: 56px;
   height: 56px;
