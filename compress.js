@@ -465,7 +465,11 @@
   async function compress(file, opts) {
     opts = opts || {};
     try {
-      if (file.type === 'image/gif') return await compressGif(file, opts);
+      // GIFs are passed through byte-for-byte. The re-encoder produced
+      // malformed frames on some sources (image rendered as a thin sliver),
+      // and a valid animation always beats a smaller broken one. Size is
+      // controlled by asking users for a reasonably sized GIF instead.
+      if (file.type === 'image/gif') return await blobToDataURL(file);
       if (/^image\/(jpeg|jpg|png|webp|bmp)$/i.test(file.type)) {
         return await compressStatic(file, opts);
       }

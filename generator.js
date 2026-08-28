@@ -609,6 +609,44 @@
       actions.appendChild(aiBtn);
     }
 
+    // "Link" button — use a hosted image URL instead of embedding the bytes.
+    // This is the only way to keep the email under Gmail's 102 KB clip limit
+    // once you have a hero image plus a GIF.
+    {
+      let actions = wrap.querySelector('.dropzone-actions');
+      if (!actions) {
+        actions = document.createElement('div');
+        actions.className = 'dropzone-actions';
+        wrap.appendChild(actions);
+      }
+      const linkBtn = document.createElement('button');
+      linkBtn.type = 'button';
+      linkBtn.className = 'dropzone-action';
+      linkBtn.innerHTML = '🔗 URL';
+      linkBtn.title = 'Use a hosted image URL (keeps the email small)';
+      linkBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const existing = /^https?:\/\//i.test(currentValue || '') ? currentValue : '';
+        const v = window.prompt(
+          'Paste a public image URL (https://…).\n\n' +
+          'Host the file on the OrangeHRM server or any public URL. ' +
+          'Linked media adds almost nothing to the email size.',
+          existing
+        );
+        if (v === null) return;
+        const url = v.trim();
+        if (!url) return;
+        if (!/^https?:\/\//i.test(url)) {
+          alert('That does not look like a URL. It must start with http:// or https://');
+          return;
+        }
+        setValue(url, 'Linked — ' + url.replace(/^https?:\/\//, '').slice(0, 40));
+        if (typeof onIconRefChange === 'function') onIconRefChange(null);
+      });
+      actions.appendChild(linkBtn);
+    }
+
     wrap.appendChild(thumb);
     wrap.appendChild(text);
     wrap.appendChild(clear);
@@ -1422,11 +1460,14 @@
         'Image / GIF',
         makeDropzone({
           label: 'Drop a GIF',
-          hint: 'GIF only • any size — auto-compressed to fit the email',
+          hint: 'GIF only • over ~500 KB? use \uD83D\uDD17 URL instead',
           accept: 'image/gif',
           wide: true,
           currentValue: state.highlightsImage,
-          optimizeOpts: { maxWidth: 1200, jpegQuality: 0.92 },
+          // Sized to the mock screen's real media box (500x281). Re-encoding a
+          // GIF at 1200px produced multi-MB data URLs that the preview and
+          // Gmail both choked on.
+          optimizeOpts: { maxWidth: 500, budgetKb: 500 },
           enableAi: true,
           aiAspect: '16:9',
           onChange: (v) => {
