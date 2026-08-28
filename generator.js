@@ -139,6 +139,7 @@
       'For any other user, use this password: PW: user@OHRM123'
     ],
 
+    highlightsEnabled: true,
     demoEnabled: true,
     demoTitle: 'Stakeholder Demo (Feature Demo)\nVideo & Slide',
     demoImage: '',
@@ -1427,6 +1428,17 @@
 
   // -------- Section 3: Highlights --------
   function buildHighlightsSection(body) {
+    const toggle = document.createElement('div');
+    toggle.className = 'toggle-row';
+    toggle.innerHTML = '<span><strong>Include this section</strong><div class="field-hint">Turn off when the release has no highlight GIF</div></span>';
+    toggle.appendChild(
+      switchToggle(state.highlightsEnabled !== false, (v) => {
+        state.highlightsEnabled = v;
+        scheduleRender();
+      })
+    );
+    body.appendChild(toggle);
+
     body.appendChild(
       field(
         'Eyebrow label',

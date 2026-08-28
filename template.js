@@ -454,6 +454,7 @@
   }
 
   function renderHighlightsSection(d) {
+    if (d.highlightsEnabled === false) return '';
     const framed = d.highlightsFrame !== false;
     const src = esc(d.highlightsImage || BLANK);
     // FIXED screen geometry. The frame never resizes to the artwork — the
