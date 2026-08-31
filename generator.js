@@ -321,7 +321,7 @@
     if (window.MediaCompressor) {
       return await window.MediaCompressor.compress(file, {
         maxWidth: opts.maxWidth || 1200,
-        budgetKb: opts.budgetKb || (file.type === 'image/gif' ? 700 : 400)
+        budgetKb: opts.budgetKb || (file.type === 'image/gif' ? 55 : 120)
       });
     }
 
@@ -1479,7 +1479,7 @@
           // Sized to the mock screen's real media box (500x281). Re-encoding a
           // GIF at 1200px produced multi-MB data URLs that the preview and
           // Gmail both choked on.
-          optimizeOpts: { maxWidth: 500, budgetKb: 500 },
+          optimizeOpts: { maxWidth: 480, budgetKb: 55 },
           enableAi: true,
           aiAspect: '16:9',
           onChange: (v) => {

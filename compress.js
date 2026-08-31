@@ -388,7 +388,10 @@
       { scale: 0.6, step: 2, colors: 128 },
       { scale: 0.5, step: 3, colors: 96 },
       { scale: 0.42, step: 3, colors: 64 },
-      { scale: 0.35, step: 4, colors: 48 }
+      { scale: 0.35, step: 4, colors: 48 },
+      { scale: 0.32, step: 5, colors: 32 },
+      { scale: 0.28, step: 6, colors: 24 },
+      { scale: 0.24, step: 8, colors: 16 }
     ];
 
     let smallest = null;
@@ -465,11 +468,11 @@
   async function compress(file, opts) {
     opts = opts || {};
     try {
-      // GIFs are passed through byte-for-byte. The re-encoder produced
-      // malformed frames on some sources (image rendered as a thin sliver),
-      // and a valid animation always beats a smaller broken one. Size is
-      // controlled by asking users for a reasonably sized GIF instead.
-      if (file.type === 'image/gif') return await blobToDataURL(file);
+      // GIFs go through the re-encoder so a large upload can still fit
+      // Gmail's clip budget. Every candidate is decode-verified before it is
+      // returned; if the encoder ever produces unreadable bytes we fall back
+      // to the original rather than shipping a broken animation.
+      if (file.type === 'image/gif') return await compressGif(file, opts);
       if (/^image\/(jpeg|jpg|png|webp|bmp)$/i.test(file.type)) {
         return await compressStatic(file, opts);
       }
