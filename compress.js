@@ -414,7 +414,11 @@
       { scale: 0.8, step: 1, colors: 256 },
       { scale: 0.7, step: 1, colors: 256 },
       { scale: 0.6, step: 2, colors: 256 },
-      { scale: 0.5, step: 2, colors: 224 }
+      { scale: 0.5, step: 2, colors: 224 },
+      { scale: 0.45, step: 2, colors: 160 },
+      { scale: 0.4, step: 3, colors: 128 },
+      { scale: 0.35, step: 3, colors: 96 },
+      { scale: 0.3, step: 4, colors: 64 }
     ];
 
     let smallest = null;

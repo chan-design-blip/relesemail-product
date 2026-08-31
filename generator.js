@@ -322,7 +322,7 @@
     if (window.MediaCompressor) {
       return await window.MediaCompressor.compress(file, {
         maxWidth: opts.maxWidth || 1200,
-        budgetKb: opts.budgetKb || (file.type === 'image/gif' ? 10240 : 160)
+        budgetKb: opts.budgetKb || (file.type === 'image/gif' ? 70 : 160)
       });
     }
 
@@ -1476,14 +1476,14 @@
         'Image / GIF',
         makeDropzone({
           label: 'Drop a GIF',
-          hint: 'GIF only • kept at full quality; compressed only above 10 MB',
+          hint: 'GIF only • auto-fitted for Gmail — use 🔗 URL for full quality',
           accept: 'image/gif',
           wide: true,
           currentValue: state.highlightsImage,
           // Sized to the mock screen's real media box (500x281). Re-encoding a
           // GIF at 1200px produced multi-MB data URLs that the preview and
           // Gmail both choked on.
-          optimizeOpts: { maxWidth: 900, budgetKb: 10240 },
+          optimizeOpts: { maxWidth: 560, budgetKb: 70 },
           enableAi: true,
           aiAspect: '16:9',
           onChange: (v) => {
@@ -2243,6 +2243,34 @@
     }
 
     // For all three flows we copy the HTML synchronously after the click
+    // Gmail refuses to send a message whose body is very large, and clips the
+    // body for display past ~102 KB. An inlined GIF is base64'd (+33%), so a
+    // multi-MB GIF blows both limits: the paste appears to work, then the send
+    // fails. Warn before the user gets that far.
+    async function confirmSizeBeforeSend() {
+      let bytes = 0;
+      try { bytes = new Blob([await getClipboardHtml()]).size; } catch (e) { return true; }
+      const kb = Math.round(bytes / 1024);
+      if (bytes > 1024 * 1024) {
+        return window.confirm(
+          'This email is ' + (kb / 1024).toFixed(1) + ' MB.\n\n' +
+          'Gmail will most likely refuse to send it — an embedded GIF is stored as ' +
+          'base64 text inside the message body.\n\n' +
+          'Fix: use the URL option on the GIF dropzone and host the file on the ' +
+          'OrangeHRM server instead. It keeps full quality and adds no weight.\n\n' +
+          'Continue anyway?'
+        );
+      }
+      if (bytes > 102 * 1024) {
+        return window.confirm(
+          'This email is ' + kb + ' KB. Gmail clips message bodies over 102 KB, so ' +
+          'recipients will see "[Message clipped]" and have to click to view the rest.\n\n' +
+          'Continue anyway?'
+        );
+      }
+      return true;
+    }
+
     async function copyHtmlForPaste() {
       const htmlPromise = getClipboardHtml();
       try {
@@ -2265,6 +2293,7 @@
 
     modal.querySelector('#send-test-gmail').addEventListener('click', async () => {
       const v = validate(); if (!v) return;
+      if (!(await confirmSizeBeforeSend())) return;
       const ok = await copyHtmlForPaste();
       const url =
         'https://mail.google.com/mail/?view=cm&fs=1&tf=cm' +
@@ -2277,6 +2306,7 @@
 
     modal.querySelector('#send-test-outlook').addEventListener('click', async () => {
       const v = validate(); if (!v) return;
+      if (!(await confirmSizeBeforeSend())) return;
       const ok = await copyHtmlForPaste();
       const url =
         'https://outlook.office.com/mail/deeplink/compose' +
@@ -2289,6 +2319,7 @@
 
     modal.querySelector('#send-test-mailto').addEventListener('click', async () => {
       const v = validate(); if (!v) return;
+      if (!(await confirmSizeBeforeSend())) return;
       const ok = await copyHtmlForPaste();
       // mailto: body can't contain HTML reliably — we use clipboard for the body
       const url = 'mailto:' + encodeURIComponent(v.email) + '?subject=' + encodeURIComponent(v.subject);
