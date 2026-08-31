@@ -329,6 +329,17 @@
     });
   }
 
+
+  let gifencPromise = null;
+  function loadGifenc() {
+    if (!gifencPromise) {
+      gifencPromise = import('https://unpkg.com/gifenc@1.0.3/dist/gifenc.esm.js')
+        .catch(() => import('https://cdn.jsdelivr.net/npm/gifenc@1.0.3/dist/gifenc.esm.js'))
+        .catch(() => null);
+    }
+    return gifencPromise;
+  }
+
   // ---------- GIF pipeline ----------
 
   async function decodeGifFrames(file) {
@@ -337,6 +348,9 @@
     let decoder;
     try {
       decoder = new global.ImageDecoder({ data: buffer, type: 'image/gif' });
+      // tracks.ready must be awaited before selectedTrack is populated;
+      // reading it too early yields null and collapses frameCount to 1.
+      await decoder.tracks.ready;
       await decoder.completed;
     } catch (e) {
       return null;
@@ -367,6 +381,19 @@
     // Nothing to do — already comfortably small.
     if (file.size <= budget) return await blobToDataURL(file);
 
+    const gifenc = await loadGifenc();
+    if (!gifenc || !gifenc.GIFEncoder) {
+      // Encoder unavailable (offline, or CDN blocked on an internal host).
+      // Never hard-fail, but say so — otherwise the original multi-MB GIF is
+      // inlined and the only symptom is an unexplained red size meter.
+      if (typeof global.__mediaCompressorNotify === 'function') {
+        global.__mediaCompressorNotify(
+          'GIF compressor could not load (no network access to the CDN). The GIF was embedded at full size — use the URL option instead.'
+        );
+      }
+      return await blobToDataURL(file);
+    }
+
     const decoded = await decodeGifFrames(file);
     if (!decoded) {
       // No WebCodecs — fall back to the original so we never hard-fail.
@@ -383,15 +410,11 @@
     // Progressive attempts: shrink, thin frames, reduce palette.
     const attempts = [
       { scale: 1.0, step: 1, colors: 256 },
-      { scale: 0.85, step: 1, colors: 200 },
-      { scale: 0.75, step: 2, colors: 160 },
-      { scale: 0.6, step: 2, colors: 128 },
-      { scale: 0.5, step: 3, colors: 96 },
-      { scale: 0.42, step: 3, colors: 64 },
-      { scale: 0.35, step: 4, colors: 48 },
-      { scale: 0.32, step: 5, colors: 32 },
-      { scale: 0.28, step: 6, colors: 24 },
-      { scale: 0.24, step: 8, colors: 16 }
+      { scale: 0.9, step: 1, colors: 256 },
+      { scale: 0.8, step: 1, colors: 256 },
+      { scale: 0.7, step: 1, colors: 256 },
+      { scale: 0.6, step: 2, colors: 256 },
+      { scale: 0.5, step: 2, colors: 224 }
     ];
 
     let smallest = null;
@@ -432,20 +455,22 @@
           sample.push(d[p], d[p + 1], d[p + 2], 255);
         }
       }
-      const palette = medianCut(new Uint8ClampedArray(sample), a.colors);
-      const mapper = makeMapper(palette);
+      // Quantise + encode with gifenc. Its quantize() wants the full RGBA
+      // buffer of a representative frame; we reuse the cross-frame sample so
+      // the palette stays stable for the whole animation (avoids flicker).
+      const palette = gifenc.quantize(new Uint8ClampedArray(sample), a.colors);
 
-      const frames = raster.map((fr) => {
-        const n = targetW * targetH;
-        const indices = new Uint8Array(n);
-        const d = fr.data;
-        for (let p = 0, q = 0; p < n; p++, q += 4) {
-          indices[p] = mapper(d[q], d[q + 1], d[q + 2]);
-        }
-        return { indices: indices, delay: fr.delay };
-      });
-
-      const bytes = encodeGif(frames, targetW, targetH, palette, true);
+      const enc = gifenc.GIFEncoder();
+      for (const fr of raster) {
+        const index = gifenc.applyPalette(fr.data, palette);
+        enc.writeFrame(index, targetW, targetH, {
+          palette: palette,
+          delay: Math.max(20, Math.round(fr.delay)),
+          repeat: 0
+        });
+      }
+      enc.finish();
+      const bytes = enc.bytes();
       if (!smallest || bytes.length < smallest.length) smallest = bytes;
       if (bytes.length <= budget) {
         const url = await blobToDataURL(new Blob([bytes], { type: 'image/gif' }));
@@ -468,10 +493,6 @@
   async function compress(file, opts) {
     opts = opts || {};
     try {
-      // GIFs go through the re-encoder so a large upload can still fit
-      // Gmail's clip budget. Every candidate is decode-verified before it is
-      // returned; if the encoder ever produces unreadable bytes we fall back
-      // to the original rather than shipping a broken animation.
       if (file.type === 'image/gif') return await compressGif(file, opts);
       if (/^image\/(jpeg|jpg|png|webp|bmp)$/i.test(file.type)) {
         return await compressStatic(file, opts);

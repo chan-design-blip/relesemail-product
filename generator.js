@@ -315,13 +315,14 @@
   //   • Passes GIFs through untouched so animations survive.
   //   • Keeps PNG with transparency intact (used for logos / icons).
   // ----------------------------------------------------------------
+
   async function optimizeImage(file, opts = {}) {
     // Every upload is forced under a byte budget so the email can never grow
     // past Gmail's clip limit — regardless of what the user drops in.
     if (window.MediaCompressor) {
       return await window.MediaCompressor.compress(file, {
         maxWidth: opts.maxWidth || 1200,
-        budgetKb: opts.budgetKb || (file.type === 'image/gif' ? 55 : 120)
+        budgetKb: opts.budgetKb || (file.type === 'image/gif' ? 10240 : 160)
       });
     }
 
@@ -496,6 +497,9 @@
     state.headerImageH = totalH;
     return true;
   }
+
+  // Lets compress.js surface a failure (e.g. CDN-blocked GIF encoder) in the UI.
+  window.__mediaCompressorNotify = function (msg) { toast(msg); };
 
   function toast(msg) {
     const t = document.getElementById('toast');
@@ -1472,14 +1476,14 @@
         'Image / GIF',
         makeDropzone({
           label: 'Drop a GIF',
-          hint: 'GIF only • over ~500 KB? use \uD83D\uDD17 URL instead',
+          hint: 'GIF only • kept at full quality; compressed only above 10 MB',
           accept: 'image/gif',
           wide: true,
           currentValue: state.highlightsImage,
           // Sized to the mock screen's real media box (500x281). Re-encoding a
           // GIF at 1200px produced multi-MB data URLs that the preview and
           // Gmail both choked on.
-          optimizeOpts: { maxWidth: 480, budgetKb: 55 },
+          optimizeOpts: { maxWidth: 900, budgetKb: 10240 },
           enableAi: true,
           aiAspect: '16:9',
           onChange: (v) => {
