@@ -270,6 +270,7 @@
           const html = window.ReleaseEmailTemplate.render(state);
           previewFrame.srcdoc = html;
           updateSizeMeter(html);
+          getClipboardHtml().then((h) => { cachedClipboardHtml = h; }).catch(() => {});
         });
     });
   }
@@ -2087,13 +2088,56 @@
   // producing two copies of the template. Handing it a bare fragment — the
   // <style> block plus the wrapper table — avoids that entirely. Download
   // still gets the complete document.
+  let cachedClipboardHtml = '';
+
+  // Body fragment only. <style> and Outlook conditional comments are dropped:
+  // Gmail ignores both, and either one can make the compose editor paste the
+  // layout twice. Download keeps the full document.
   async function getClipboardHtml() {
     const full = await getExportHtml();
-    const styleMatch = full.match(/<style[\s\S]*?<\/style>/i);
     const bodyMatch = full.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-    if (!bodyMatch) return full;
-    const style = styleMatch ? styleMatch[0] : '';
-    return style + bodyMatch[1].trim();
+    let frag = bodyMatch ? bodyMatch[1] : full;
+    frag = frag.replace(/<!--\[if[\s\S]*?<!\[endif\]-->/gi, '').replace(/<!--[\s\S]*?-->/g, '');
+    return frag.trim();
+  }
+
+  // Copy exactly like a user selecting the rendered email and pressing Ctrl/Cmd+C.
+  // The browser writes one consistent text/html + text/plain pair, which Gmail
+  // pastes once. Must run synchronously inside the click.
+  function copyViaSelection(html) {
+    const host = document.createElement('div');
+    host.setAttribute('contenteditable', 'true');
+    host.style.cssText = 'position:fixed;left:-99999px;top:0;width:640px;opacity:0;pointer-events:none;';
+    host.innerHTML = html;
+    document.body.appendChild(host);
+    const sel = window.getSelection();
+    const prev = [];
+    for (let i = 0; i < sel.rangeCount; i++) prev.push(sel.getRangeAt(i));
+    const range = document.createRange();
+    range.selectNodeContents(host);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    sel.removeAllRanges();
+    prev.forEach((r) => sel.addRange(r));
+    host.remove();
+    return ok;
+  }
+
+  async function copyEmailToClipboard() {
+    const html = cachedClipboardHtml || (await getClipboardHtml());
+    if (copyViaSelection(html)) return true;
+    try {
+      if (navigator.clipboard && window.ClipboardItem) {
+        await navigator.clipboard.write([new ClipboardItem({
+          'text/html': new Blob([html], { type: 'text/html' }),
+          'text/plain': new Blob([plainFallbackLabel()], { type: 'text/plain' })
+        })]);
+        return true;
+      }
+    } catch (e) {}
+    return false;
   }
 
   // Short plain-text flavour for the clipboard. Must never be the full HTML —
@@ -2104,44 +2148,8 @@
   }
 
   document.getElementById('btn-copy').addEventListener('click', async () => {
-    // IMPORTANT: navigator.clipboard.write() must be called SYNCHRONOUSLY after
-    // the user gesture. Any await before the write loses the gesture context
-    // and the browser rejects with NotAllowedError. ClipboardItem accepts
-    // Promises that resolve to Blobs — the gesture is preserved across them.
-    const htmlPromise = getClipboardHtml();
-
-    let copiedRich = false;
-    let lastError = null;
-
-    if (navigator.clipboard && navigator.clipboard.write && window.ClipboardItem) {
-      try {
-        // IMPORTANT: text/plain must NOT also be the full HTML. Gmail (and
-        // several webmail editors) paste the html flavour AND then append the
-        // plain flavour, which is what produced two copies of the email.
-        // A short label keeps the plain flavour harmless.
-        const item = new ClipboardItem({
-          'text/html':  htmlPromise.then((h) => new Blob([h], { type: 'text/html' })),
-          'text/plain': new Blob([plainFallbackLabel()], { type: 'text/plain' })
-        });
-        await navigator.clipboard.write([item]);
-        copiedRich = true;
-      } catch (e) {
-        lastError = e;
-      }
-    }
-
-    if (!copiedRich) {
-      try {
-        const html = await htmlPromise;
-        await navigator.clipboard.writeText(html);
-      } catch (e) {
-        toast('Copy failed — try Download HTML instead');
-        console.error('Copy failed:', lastError || e);
-        return;
-      }
-    }
-
-    toast(copiedRich ? 'Copied! Paste into Gmail compose' : 'HTML source copied');
+    const ok = await copyEmailToClipboard();
+    toast(ok ? 'Copied! Paste into Gmail compose' : 'Copy failed — try Download HTML instead');
   });
 
   document.getElementById('btn-download').addEventListener('click', async () => {
@@ -2271,25 +2279,7 @@
       return true;
     }
 
-    async function copyHtmlForPaste() {
-      const htmlPromise = getClipboardHtml();
-      try {
-        if (navigator.clipboard && navigator.clipboard.write && window.ClipboardItem) {
-          const item = new ClipboardItem({
-            'text/html':  htmlPromise.then((h) => new Blob([h], { type: 'text/html' })),
-            'text/plain': new Blob([plainFallbackLabel()], { type: 'text/plain' })
-          });
-          await navigator.clipboard.write([item]);
-          return true;
-        }
-      } catch (e) {}
-      try {
-        await navigator.clipboard.writeText(await htmlPromise);
-        return true;
-      } catch (e) {
-        return false;
-      }
-    }
+    async function copyHtmlForPaste() { return copyEmailToClipboard(); }
 
     modal.querySelector('#send-test-gmail').addEventListener('click', async () => {
       const v = validate(); if (!v) return;
