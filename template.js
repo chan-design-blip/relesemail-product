@@ -348,7 +348,7 @@
   <!-- Top Branding Area -->
   <tr><td style="text-align:center;padding:40px 40px 0px;">
     <div style="margin-bottom:0px;">
-      <img src="${esc(d.logo || 'assets/orangehrm-logo-white.png')}" width="${logoW}" height="${logoH}" alt="${esc(titlePrefix)}" style="display:inline-block;height:${logoH}px;width:${logoW}px;border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;">
+      <img src="${esc(d.logo || window.OHRM_DEFAULT_LOGO || '')}" width="${logoW}" height="${logoH}" alt="${esc(titlePrefix)}" style="display:inline-block;height:${logoH}px;width:${logoW}px;border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;">
     </div>
     <div style="position:relative;z-index:20;padding-top:8px;">
       ${headerHtml}

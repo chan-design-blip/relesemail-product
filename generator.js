@@ -12,7 +12,7 @@
     productName: 'ORANGEHRM',
     version: '8.1.1',
     tagline: 'Is Out As a Stable Version',
-    logo: 'assets/orangehrm-logo-white.png',
+    logo: window.OHRM_DEFAULT_LOGO,
     logoHeight: 60,
     logoAspect: 3.74,
     versionStyle: 'amber',
@@ -256,6 +256,7 @@
   }
 
   function scheduleRender() {
+    if (!state.logo || state.logo === 'assets/orangehrm-logo-white.png') state.logo = window.OHRM_DEFAULT_LOGO;
     saveState();
     if (renderPending) return;
     renderPending = true;
@@ -1104,7 +1105,7 @@
           // Logos need transparency — keep PNG, modest max width.
           optimizeOpts: { maxWidth: 400, preserveAlpha: true },
           onChange: (v) => {
-            state.logo = v || 'assets/orangehrm-logo-white.png';
+            state.logo = v || window.OHRM_DEFAULT_LOGO;
             // Measure the natural aspect ratio so we can emit explicit width
             // AND height HTML attrs in the email (Gmail respects HTML attrs
             // even when CSS is stripped → no resize on paste).
