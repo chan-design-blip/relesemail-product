@@ -50,3 +50,13 @@ Now that this runs on an OrangeHRM host, a server-side Gemini proxy is the clean
 path for generating hero images in-app: the API key lives in server config, the
 browser only posts a prompt. Ask before building — it adds a server-side
 component to what is currently a pure static deploy.
+
+
+## Image hosting (required for Gmail)
+
+`api/upload-image.php` saves every image in the email to `media/` and the email links to it.
+This stops Gmail pasting the layout twice, keeps images visible for recipients, and keeps the email under 102 KB.
+
+- PHP must be able to write to `media/` (create it with `chmod 755`, owned by the web server user).
+- The server must be reachable from the public internet. Gmail loads images through Google's proxy, so images on an internal-only host will not show for recipients.
+- If the upload fails, the generator falls back to embedding images and warns on copy.

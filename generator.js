@@ -2130,10 +2130,50 @@
     return html;
   }
 
+  // ---------- Image hosting ----------
+  // Uploads every embedded image to the server and swaps in its public URL.
+  // Falls back to embedding (with the size budget) when no endpoint is reachable.
+  const UPLOAD_ENDPOINT = (window.RELEASE_EMAIL_CONFIG || {}).uploadEndpoint;
+  const hostedCache = new Map();
+  let hostingStatus = UPLOAD_ENDPOINT ? 'pending' : 'off';
+
+  async function svgToPng(src) {
+    const im = await loadImg(src);
+    const s = 96 / Math.max(im.naturalWidth || 24, im.naturalHeight || 24);
+    const c = document.createElement('canvas');
+    c.width = Math.round((im.naturalWidth || 24) * s); c.height = Math.round((im.naturalHeight || 24) * s);
+    c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+    return c.toDataURL('image/png');
+  }
+  async function hostImage(src) {
+    const key = src.length + ':' + src.slice(30, 120) + src.slice(-80);
+    if (hostedCache.has(key)) return hostedCache.get(key);
+    const data = src.startsWith('data:image/svg') ? await svgToPng(src) : src;
+    const res = await fetch(UPLOAD_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data }) });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || !json.url) throw new Error(json.error || ('HTTP ' + res.status));
+    hostedCache.set(key, json.url);
+    return json.url;
+  }
+  async function hostAllImages(html) {
+    if (!UPLOAD_ENDPOINT) return html;
+    const srcs = [...new Set([...html.matchAll(/src="(data:image\/[^"]+)"/g)].map((m) => m[1]))];
+    try {
+      for (const s of srcs) html = html.split(s).join(await hostImage(s));
+      hostingStatus = 'ok';
+    } catch (e) {
+      hostingStatus = 'failed';
+      console.warn('Image hosting unavailable, embedding instead:', e.message);
+    }
+    return html;
+  }
+
   async function getExportHtml() {
     let html = window.ReleaseEmailTemplate.render(state);
     html = await inlineLocalAssets(html);
-    return fitToBudget(bakeForExport(html));
+    html = bakeForExport(html);
+    html = await hostAllImages(html);
+    return fitToBudget(html);
   }
 
   // Clipboard flavour of the email.
@@ -2225,6 +2265,8 @@
 
   document.getElementById('btn-copy').addEventListener('click', async () => {
     const ok = await copyEmailToClipboard();
+    if (ok && hostingStatus === 'ok' && lastBudgetResult.fits) { toast('Copied! Images are hosted on the server — paste into Gmail.'); return; }
+    if (ok && hostingStatus === 'failed') { toast('Copied, but image upload failed, so images are embedded. Gmail may paste twice and hide images. Check the media folder is writable.'); return; }
     if (ok && !lastBudgetResult.fits) toast('Copied, but still ' + Math.round(lastBudgetResult.kb) + ' KB — the GIF is too large to fit. Use a smaller GIF or link it by URL.');
     else toast(ok ? 'Copied! ' + Math.round(lastBudgetResult.kb) + ' KB — fits Gmail. Paste into compose.' : 'Copy failed — try Download HTML instead');
   });
