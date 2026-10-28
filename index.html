@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Release Email Generator — OrangeHRM</title>
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="generator.css">
+<link rel="stylesheet" href="generator.css?v=20261028c">
 </head>
 <body>
 <div class="app">
@@ -27,6 +27,7 @@
     <button id="btn-reset" class="btn btn-ghost" type="button" title="Reset to defaults">Reset</button>
     <button id="btn-send-test" class="btn" type="button" title="Send a test email">✉ Send test</button>
     <button id="btn-copy" class="btn" type="button">Copy HTML</button>
+    <button id="btn-copy-view" class="btn" type="button" title="Opens the email alone in a new tab, pre-selected. Press Ctrl/Cmd+C there, then paste into Gmail.">Gmail copy view</button>
     <button id="btn-download" class="btn btn-primary" type="button">↓ Download HTML</button>
   </header>
 
@@ -48,12 +49,12 @@
   // deployed. Leave it empty to hide the AI buttons entirely.
   window.RELEASE_EMAIL_CONFIG = { aiEndpoint: 'api/gemini-image.php' };
 </script>
-<script src="logo.js"></script>
-<script src="template.js"></script>
-<script src="icons.js"></script>
-<script src="compress.js"></script>
-<script src="ai.js"></script>
-<script src="generator.js"></script>
+<script src="logo.js?v=20261028c"></script>
+<script src="template.js?v=20261028c"></script>
+<script src="icons.js?v=20261028c"></script>
+<script src="compress.js?v=20261028c"></script>
+<script src="ai.js?v=20261028c"></script>
+<script src="generator.js?v=20261028c"></script>
 <script>
   // Auto-size the preview iframe to match its content height
   (function () {

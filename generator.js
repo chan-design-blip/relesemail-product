@@ -270,8 +270,7 @@
         .then(() => {
           const html = window.ReleaseEmailTemplate.render(state);
           previewFrame.srcdoc = html;
-          updateSizeMeter(html);
-          getClipboardHtml().then((h) => { cachedClipboardHtml = h; }).catch(() => {});
+          getClipboardHtml().then((h) => { cachedClipboardHtml = h; updateSizeMeter(h); }).catch(() => updateSizeMeter(html));
         });
     });
   }
@@ -2076,10 +2075,65 @@
     return html;
   }
 
+  // ---------- Gmail size budget ----------
+  // Gmail clips message bodies over 102 KB. Every export is squeezed under
+  // EMAIL_BUDGET_KB automatically: markup is minified, opaque PNGs become JPEG,
+  // then the largest still images are stepped down until the email fits.
+  const EMAIL_BUDGET_KB = 95;
+  const shrinkCache = new Map();
+  let lastBudgetResult = { fits: true, kb: 0 };
+
+  function loadImg(src) {
+    return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; });
+  }
+  async function reencode(src, scale, quality) {
+    const key = src.length + ':' + src.slice(-40) + ':' + scale + ':' + quality;
+    if (shrinkCache.has(key)) return shrinkCache.get(key);
+    let out = src;
+    try {
+      const im = await loadImg(src);
+      const w = Math.max(1, Math.round(im.naturalWidth * scale));
+      const h = Math.max(1, Math.round(im.naturalHeight * scale));
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      const x = c.getContext('2d'); x.imageSmoothingQuality = 'high'; x.drawImage(im, 0, 0, w, h);
+      const d = x.getImageData(0, 0, w, h).data; let opaque = true;
+      for (let i = 3; i < d.length; i += 16) { if (d[i] < 250) { opaque = false; break; } }
+      const cand = opaque ? c.toDataURL('image/jpeg', quality) : c.toDataURL('image/png');
+      if (cand.length < src.length) out = cand;
+    } catch (e) {}
+    shrinkCache.set(key, out);
+    return out;
+  }
+  function minifyEmail(html) {
+    return html.replace(/<!--(?!\[if|<!\[endif)[\s\S]*?-->/g, '').replace(/>\s+</g, '><').replace(/[ \t]{2,}/g, ' ');
+  }
+  async function fitToBudget(html) {
+    html = minifyEmail(html);
+    const budget = EMAIL_BUDGET_KB * 1024;
+    const rasters = () => [...new Set([...html.matchAll(/src="(data:image\/(?:png|jpeg|jpg|webp);base64,[^"]+)"/g)].map((m) => m[1]))];
+    for (const src of rasters()) {
+      if (src.length < 6 * 1024) continue;
+      const out = await reencode(src, 1, 0.92);
+      if (out !== src) html = html.split(src).join(out);
+    }
+    const steps = [[0.9, 0.86], [0.8, 0.82], [0.7, 0.78], [0.6, 0.74], [0.5, 0.7]];
+    for (const [scale, q] of steps) {
+      if (html.length <= budget) break;
+      const list = rasters().filter((s) => s.length > 8 * 1024).sort((a, b) => b.length - a.length);
+      for (const src of list) {
+        if (html.length <= budget) break;
+        const out = await reencode(src, scale, q);
+        if (out !== src) html = html.split(src).join(out);
+      }
+    }
+    lastBudgetResult = { fits: html.length <= budget, kb: html.length / 1024 };
+    return html;
+  }
+
   async function getExportHtml() {
     let html = window.ReleaseEmailTemplate.render(state);
     html = await inlineLocalAssets(html);
-    return bakeForExport(html);
+    return fitToBudget(bakeForExport(html));
   }
 
   // Clipboard flavour of the email.
@@ -2148,9 +2202,31 @@
     return `${state.productName || 'ORANGEHRM'} ${state.version || ''} release email`.trim();
   }
 
+  // Opens the email on its own page with the email pre-selected. Copying from
+  // a real rendered page with Ctrl/Cmd+C is the most reliable way to paste into
+  // Gmail, because the browser builds the clipboard itself.
+  document.getElementById('btn-copy-view').addEventListener('click', () => {
+    const w = window.open('', '_blank');
+    if (!w) { toast('Allow pop-ups for this site, then try again'); return; }
+    const build = (html) => {
+      w.document.open();
+      w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Press Ctrl/Cmd+C, then paste into Gmail</title></head>' +
+        '<body style="margin:0;background:#eef0f5;font-family:-apple-system,Segoe UI,Arial,sans-serif;">' +
+        '<div style="position:sticky;top:0;z-index:2;background:#111827;color:#fff;padding:12px 16px;font-size:14px;text-align:center;user-select:none;">' +
+        'The email is selected. Press <b>Ctrl+C</b> (Windows) or <b>Cmd+C</b> (Mac), then paste into Gmail. Click the email to re-select.</div>' +
+        '<div id="mail" style="padding:24px 0;">' + html + '</div>' +
+        '<script>function s(){var r=document.createRange();r.selectNodeContents(document.getElementById("mail"));var x=getSelection();x.removeAllRanges();x.addRange(r);}' +
+        'window.onload=s;document.getElementById("mail").addEventListener("click",s);<\/script></body></html>');
+      w.document.close();
+    };
+    if (cachedClipboardHtml) build(cachedClipboardHtml);
+    else getClipboardHtml().then(build);
+  });
+
   document.getElementById('btn-copy').addEventListener('click', async () => {
     const ok = await copyEmailToClipboard();
-    toast(ok ? 'Copied! Paste into Gmail compose' : 'Copy failed — try Download HTML instead');
+    if (ok && !lastBudgetResult.fits) toast('Copied, but still ' + Math.round(lastBudgetResult.kb) + ' KB — the GIF is too large to fit. Use a smaller GIF or link it by URL.');
+    else toast(ok ? 'Copied! ' + Math.round(lastBudgetResult.kb) + ' KB — fits Gmail. Paste into compose.' : 'Copy failed — try Download HTML instead');
   });
 
   document.getElementById('btn-download').addEventListener('click', async () => {
